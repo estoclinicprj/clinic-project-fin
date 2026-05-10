@@ -8,6 +8,7 @@ import {
   Stethoscope,
   Users,
   ClipboardPlus,
+  ClipboardList,
   UserCheck,
   Activity,
   Sun,
@@ -42,6 +43,11 @@ const navItems = [
     label: "Ajouter Médecin",
     href: "/ajouter-medecin",
     icon: Stethoscope,
+  },
+  {
+    label: "Liste des Consultations",
+    href: "/liste-consultations",
+    icon: ClipboardList,
   },
   {
     label: "Nouvelle Consultation",

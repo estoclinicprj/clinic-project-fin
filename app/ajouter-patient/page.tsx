@@ -5,19 +5,23 @@ import { Sidebar } from "@/components/dashboard/sidebar"
 import { Bell, Search, UserPlus, CheckCircle2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ApiService } from "@/lib/api-service"
 
 type NotificationState = {
   type: "success" | "error"
   message: string
 } | null
 
+interface PatientResponse {
+  status: "success" | "error"
+  message?: string
+}
+
 export default function AjouterPatientPage() {
   const [formData, setFormData] = useState({
     nom: "",
     prenom: "",
-    dateNaissance: "",
-    telephone: "",
-    sexe: "",
+    cin: "",
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [notification, setNotification] = useState<NotificationState>(null)
@@ -33,22 +37,13 @@ export default function AjouterPatientPage() {
     setNotification(null)
 
     try {
-      const response = await fetch("api/ajouter_patient.php", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          nom: formData.nom,
-          prenom: formData.prenom,
-          date_naissance: formData.dateNaissance,
-          telephone: formData.telephone,
-          sexe: formData.sexe,
-        }),
+      const response = await ApiService.postData<PatientResponse>("api/post_patient.php", {
+        nom: formData.nom,
+        prenom: formData.prenom,
+        cin: formData.cin,
       })
 
-      if (response.ok) {
+      if (response.status === "success") {
         setNotification({
           type: "success",
           message: "Le patient a été enregistré avec succès dans le système.",
@@ -56,24 +51,21 @@ export default function AjouterPatientPage() {
         setFormData({
           nom: "",
           prenom: "",
-          dateNaissance: "",
-          telephone: "",
-          sexe: "",
+          cin: "",
         })
       } else {
-        const errorData = await response.json().catch(() => null)
         setNotification({
           type: "error",
-          message:
-            errorData?.message ||
-            `Une erreur est survenue (code ${response.status}). Veuillez réessayer.`,
+          message: response.message || "Une erreur est survenue. Veuillez réessayer.",
         })
       }
-    } catch {
+    } catch (error) {
       setNotification({
         type: "error",
         message:
-          "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
+          error instanceof Error
+            ? error.message
+            : "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
       })
     } finally {
       setIsSubmitting(false)
@@ -81,12 +73,7 @@ export default function AjouterPatientPage() {
     }
   }
 
-  const isFormValid =
-    formData.nom &&
-    formData.prenom &&
-    formData.dateNaissance &&
-    formData.telephone &&
-    formData.sexe
+  const isFormValid = formData.nom.trim() && formData.prenom.trim() && formData.cin.trim()
 
   return (
     <div className="min-h-screen bg-background">
@@ -225,68 +212,22 @@ export default function AjouterPatientPage() {
                   </div>
                 </div>
 
-                {/* Date de Naissance & Téléphone */}
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="dateNaissance"
-                      className="block text-sm font-medium text-foreground"
-                    >
-                      Date de Naissance
-                    </label>
-                    <input
-                      type="date"
-                      id="dateNaissance"
-                      name="dateNaissance"
-                      value={formData.dateNaissance}
-                      onChange={handleInputChange}
-                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="telephone" className="block text-sm font-medium text-foreground">
-                      Téléphone
-                    </label>
-                    <input
-                      type="tel"
-                      id="telephone"
-                      name="telephone"
-                      value={formData.telephone}
-                      onChange={handleInputChange}
-                      placeholder="+33 6 12 34 56 78"
-                      autoComplete="tel"
-                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Sexe */}
-                <div className="space-y-3">
-                  <p className="block text-sm font-medium text-foreground">Sexe</p>
-                  <div className="flex flex-wrap gap-4">
-                    {[
-                      { value: "masculin", label: "Masculin" },
-                      { value: "feminin", label: "Féminin" },
-                    ].map((option) => (
-                      <label
-                        key={option.value}
-                        className="flex cursor-pointer items-center gap-3 rounded-lg border border-input bg-background px-5 py-3 text-sm font-medium text-foreground transition-colors hover:border-primary/50 has-[:checked]:border-primary has-[:checked]:bg-primary/10 has-[:checked]:text-primary"
-                      >
-                        <input
-                          type="radio"
-                          name="sexe"
-                          value={option.value}
-                          checked={formData.sexe === option.value}
-                          onChange={handleInputChange}
-                          className="h-4 w-4 accent-primary"
-                        />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
+                {/* CIN */}
+                <div className="space-y-2">
+                  <label htmlFor="cin" className="block text-sm font-medium text-foreground">
+                    CIN (Carte d&apos;Identité Nationale)
+                  </label>
+                  <input
+                    type="text"
+                    id="cin"
+                    name="cin"
+                    value={formData.cin}
+                    onChange={handleInputChange}
+                    placeholder="Entrez le numéro CIN"
+                    autoComplete="off"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    required
+                  />
                 </div>
 
                 {/* Submit */}

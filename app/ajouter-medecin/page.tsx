@@ -5,15 +5,16 @@ import { Sidebar } from "@/components/dashboard/sidebar"
 import { Bell, Search, Stethoscope, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ApiService } from "@/lib/api-service"
 
 type NotificationState = {
   type: "success" | "error"
   message: string
 } | null
 
-type FieldErrors = {
-  email?: string
-  telephone?: string
+type BackendResponse = {
+  status: "success" | "error"
+  message?: string
 }
 
 const SPECIALITES = [
@@ -34,31 +35,21 @@ const SPECIALITES = [
   "Gastro-entérologie",
 ]
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const PHONE_REGEX = /^[+\d\s\-().]{6,20}$/
-
 export default function AjouterMedecinPage() {
   const [formData, setFormData] = useState({
     nom: "",
-    prenom: "",
-    telephone: "",
-    email: "",
-    specialite: "",
+    spec: "",
+    cap: "",
   })
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [notification, setNotification] = useState<NotificationState>(null)
+  const [capError, setCapError] = useState<string | undefined>(undefined)
 
-  const validateField = (name: string, value: string): string | undefined => {
-    if (name === "email") {
-      if (!value) return "L'adresse email est obligatoire."
-      if (!EMAIL_REGEX.test(value)) return "Format d'email invalide (ex: nom@domaine.fr)."
-    }
-    if (name === "telephone") {
-      if (!value) return "Le numéro de téléphone est obligatoire."
-      if (!PHONE_REGEX.test(value))
-        return "Numéro invalide. Utilisez uniquement des chiffres, +, espace ou tiret."
-    }
+  const validateCap = (value: string): string | undefined => {
+    if (!value) return "La capacité journalière est obligatoire."
+    const num = Number(value)
+    if (!Number.isInteger(num) || num <= 0)
+      return "La capacité doit être un entier positif (ex: 10, 20)."
     return undefined
   }
 
@@ -67,29 +58,21 @@ export default function AjouterMedecinPage() {
   ) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
-
-    if (name === "email" || name === "telephone") {
-      const error = validateField(name, value)
-      setFieldErrors((prev) => ({ ...prev, [name]: error }))
+    if (name === "cap") {
+      setCapError(validateCap(value))
     }
   }
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    if (name === "email" || name === "telephone") {
-      const error = validateField(name, value)
-      setFieldErrors((prev) => ({ ...prev, [name]: error }))
-    }
+  const handleCapBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    setCapError(validateCap(e.target.value))
   }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    const emailError = validateField("email", formData.email)
-    const phoneError = validateField("telephone", formData.telephone)
-
-    if (emailError || phoneError) {
-      setFieldErrors({ email: emailError, telephone: phoneError })
+    const capValidationError = validateCap(formData.cap)
+    if (capValidationError) {
+      setCapError(capValidationError)
       return
     }
 
@@ -97,41 +80,37 @@ export default function AjouterMedecinPage() {
     setNotification(null)
 
     try {
-      const response = await fetch("api/ajouter_medecin.php", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
+      const result = await ApiService.postData<BackendResponse>(
+        "api/post_medecin.php",
+        {
           nom: formData.nom,
-          prenom: formData.prenom,
-          telephone: formData.telephone,
-          email: formData.email,
-          specialite: formData.specialite,
-        }),
-      })
+          spec: formData.spec,
+          cap: Number(formData.cap),
+        }
+      )
 
-      if (response.ok) {
+      if (result.status === "success") {
         setNotification({
           type: "success",
           message: "Le médecin a été enregistré avec succès dans le système.",
         })
-        setFormData({ nom: "", prenom: "", telephone: "", email: "", specialite: "" })
-        setFieldErrors({})
+        setFormData({ nom: "", spec: "", cap: "" })
+        setCapError(undefined)
       } else {
-        const errorData = await response.json().catch(() => null)
         setNotification({
           type: "error",
           message:
-            errorData?.message ||
-            `Une erreur est survenue (code ${response.status}). Veuillez réessayer.`,
+            result.message ||
+            "Une erreur est survenue lors de l'enregistrement. Veuillez réessayer.",
         })
       }
-    } catch {
+    } catch (err) {
       setNotification({
         type: "error",
-        message: "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.",
       })
     } finally {
       setIsSubmitting(false)
@@ -140,13 +119,10 @@ export default function AjouterMedecinPage() {
   }
 
   const isFormValid =
-    formData.nom &&
-    formData.prenom &&
-    formData.telephone &&
-    formData.email &&
-    formData.specialite &&
-    !fieldErrors.email &&
-    !fieldErrors.telephone
+    formData.nom.trim() !== "" &&
+    formData.spec !== "" &&
+    formData.cap !== "" &&
+    !capError
 
   return (
     <div className="min-h-screen bg-background">
@@ -246,110 +222,33 @@ export default function AjouterMedecinPage() {
             <CardContent className="pt-6">
               <form onSubmit={handleSubmit} className="space-y-6" noValidate>
 
-                {/* Nom & Prénom */}
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <label htmlFor="nom" className="block text-sm font-medium text-foreground">
-                      Nom
-                    </label>
-                    <input
-                      type="text"
-                      id="nom"
-                      name="nom"
-                      value={formData.nom}
-                      onChange={handleInputChange}
-                      placeholder="Entrez le nom"
-                      autoComplete="family-name"
-                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="prenom" className="block text-sm font-medium text-foreground">
-                      Prénom
-                    </label>
-                    <input
-                      type="text"
-                      id="prenom"
-                      name="prenom"
-                      value={formData.prenom}
-                      onChange={handleInputChange}
-                      placeholder="Entrez le prénom"
-                      autoComplete="given-name"
-                      className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Téléphone */}
+                {/* Nom */}
                 <div className="space-y-2">
-                  <label htmlFor="telephone" className="block text-sm font-medium text-foreground">
-                    Téléphone
+                  <label htmlFor="nom" className="block text-sm font-medium text-foreground">
+                    Nom
                   </label>
                   <input
-                    type="tel"
-                    id="telephone"
-                    name="telephone"
-                    value={formData.telephone}
+                    type="text"
+                    id="nom"
+                    name="nom"
+                    value={formData.nom}
                     onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    placeholder="+33 6 12 34 56 78"
-                    autoComplete="tel"
-                    className={`h-11 w-full rounded-lg border bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:outline-none focus:ring-1 ${
-                      fieldErrors.telephone
-                        ? "border-destructive focus:border-destructive focus:ring-destructive"
-                        : "border-input focus:border-primary focus:ring-primary"
-                    }`}
+                    placeholder="Entrez le nom du médecin"
+                    autoComplete="family-name"
+                    className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     required
                   />
-                  {fieldErrors.telephone && (
-                    <div className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      {fieldErrors.telephone}
-                    </div>
-                  )}
-                </div>
-
-                {/* Email */}
-                <div className="space-y-2">
-                  <label htmlFor="email" className="block text-sm font-medium text-foreground">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    onBlur={handleBlur}
-                    placeholder="medecin@clinique.fr"
-                    autoComplete="email"
-                    className={`h-11 w-full rounded-lg border bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:outline-none focus:ring-1 ${
-                      fieldErrors.email
-                        ? "border-destructive focus:border-destructive focus:ring-destructive"
-                        : "border-input focus:border-primary focus:ring-primary"
-                    }`}
-                    required
-                  />
-                  {fieldErrors.email && (
-                    <div className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      {fieldErrors.email}
-                    </div>
-                  )}
                 </div>
 
                 {/* Spécialité */}
                 <div className="space-y-2">
-                  <label htmlFor="specialite" className="block text-sm font-medium text-foreground">
+                  <label htmlFor="spec" className="block text-sm font-medium text-foreground">
                     Spécialité
                   </label>
                   <select
-                    id="specialite"
-                    name="specialite"
-                    value={formData.specialite}
+                    id="spec"
+                    name="spec"
+                    value={formData.spec}
                     onChange={handleInputChange}
                     className="h-11 w-full rounded-lg border border-input bg-background px-4 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     required
@@ -363,6 +262,39 @@ export default function AjouterMedecinPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Capacité journalière */}
+                <div className="space-y-2">
+                  <label htmlFor="cap" className="block text-sm font-medium text-foreground">
+                    Capacité journalière
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      (nombre max. de patients par jour)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    id="cap"
+                    name="cap"
+                    value={formData.cap}
+                    onChange={handleInputChange}
+                    onBlur={handleCapBlur}
+                    placeholder="Ex: 20"
+                    min={1}
+                    step={1}
+                    className={`h-11 w-full rounded-lg border bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:outline-none focus:ring-1 ${
+                      capError
+                        ? "border-destructive focus:border-destructive focus:ring-destructive"
+                        : "border-input focus:border-primary focus:ring-primary"
+                    }`}
+                    required
+                  />
+                  {capError && (
+                    <div className="flex items-center gap-1.5 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {capError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Submit */}
